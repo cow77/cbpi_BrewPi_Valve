@@ -9,6 +9,11 @@ import re, threading, time
 from flask import Blueprint, render_template, request
 from modules.core.props import Property
 from modules.core.hardware import ActorBase 
+import Queue
+
+q = Queue.Queue()
+workerBP_set_stateLock = False
+rs = ["","","","",""]
 
 try:
     from contextlib import contextmanager
@@ -58,7 +63,7 @@ blueprint = Blueprint('one_wire_valve', __name__)
 @cbpi.actor
 class BrewPiValve(ActorBase):
     OWFS = False
-    
+   
     def getBPValves():
         try:
             arr = []
@@ -81,6 +86,11 @@ class BrewPiValve(ActorBase):
             return arr
         except:
             return []
+
+    actor_name = Property.Select("1W-BP-Actor", options=getBPValves(), description="The BrewPi OneWire Valve Controller address.")
+    actor_type = Property.Select("Type", options=["CR03","CR05"], description="The valve type (CR03 = two wires, CR05 = 5 wires with status).")
+    port_name = Property.Select("Port", options=["A","B"], description="The BrewPi valve port.")
+    inact_timeout = Property.Number("Timeout", configurable=True, default_value=10, description="Valve setting timeout.")
 
 
     def targetState(self, actor, port, state):
@@ -190,13 +200,13 @@ class BrewPiValve(ActorBase):
                 rss = "UNKNOWN"         ## unknown
 
             ## bit 3-2: Valve B action: 01 = open, 10 = close, 11 = off, 00 = off but LEDS on
-            if (TestBit(b,3)==False and TestBit(b,2)==True):
+            if (TestBit(b,2)==False and TestBit(b,3)==True):
                rsa = "OPEN"             ## port opening
-            elif (TestBit(b,3)==True and TestBit(b,2)==False):
+            elif (TestBit(b,2)==True and TestBit(b,3)==False):
                rsa = "CLOSE"            ## port closing
-            elif (TestBit(b,3)==True and TestBit(b,2)==True):
+            elif (TestBit(b,2)==True and TestBit(b,3)==True):
                 rsa = "OFF"             ## port off
-            elif (TestBit(b,3)==False and TestBit(b,2)==False):
+            elif (TestBit(b,2)==False and TestBit(b,3)==False):
                 rsa = "OFFLEDSON"       ## inactive
         elif port == "A":
             ## bit 5-4: Valve A status: 01 = opened, 10 = closed, 11 = in between
@@ -209,22 +219,63 @@ class BrewPiValve(ActorBase):
             else:
                 rss = "UNKNOWN"         ## unknown
 
-            ## bit 7-6: Valve A action: 01 = open, 10 = close, 11 = off, 00 = off but LEDS on
-            if (TestBit(b,7)==False and TestBit(b,6)==True):
+            ## bit 6-7: Valve A action: 01 = open, 10 = close, 11 = off, 00 = off but LEDS on
+            if (TestBit(b,6)==False and TestBit(b,7)==True):
                  rsa = "OPEN"           ## 01 = port opening
-            if (TestBit(b,7)==True and TestBit(b,6)==False):
+            elif (TestBit(b,6)==True and TestBit(b,7)==False):
                  rsa = "CLOSE"          ## 10 = port closing
-            if (TestBit(b,7)==True and TestBit(b,6)==True):
+            elif (TestBit(b,7)==True and TestBit(b,6)==True):
                 rsa = "OFF"             ## 11 port off
-            if (TestBit(b,7)==False and TestBit(b,6)==False):
+            elif (TestBit(b,7)==False and TestBit(b,6)==False):
                 rsa = "OFFLEDSON"       ## off but LEDS on
-            else:
-                rsa = "UNKNOWN"         ## unknown
         ##cbpi.app.logger.info("GetBPState => VALVE: ??, port: %s, rss: %s, rsa: %s" % (port, rss, rsa))
         return ( [rss, rsa] )
 
 
-    def setBPstate(self, actor, port, state):
+    def setBPstate(self, actor, port, type, action, timeout):
+        if action == "OFF" or action == "OFFLEDSON":
+            self.writeBPstate(actor, port, action) ## direct write
+        else:
+            global q
+            q.put([actor, port, type, action, int(timeout)])   ## write via queue
+
+ 
+    @cbpi.backgroundtask(key="BP1W_set", interval=15)
+    def workerBP_set_state(self):
+        global workerBP_set_stateLock
+        if workerBP_set_stateLock:
+            ##cbpi.app.logger.info("VALVE Q-worker. There is a Q-worker already ACTIVE; this thread exits")
+            return
+        workerBP_set_stateLock = True
+        cbpi.app.logger.info("VALVE Q-worker started")
+
+        global q,rs
+        try:
+            while True:
+                if q.empty():
+                    ##cbpi.app.logger.info("VALVE Q-worker queue: EMPTY")
+                    time.sleep(.5)
+                else:
+                    rs = q.get()
+                    cbpi.app.logger.info("VALVE Q-worker got cmd %s from queue" % (list(rs)))
+                    actor  = list(rs)[0]
+                    port   = list(rs)[1]
+                    type   = list(rs)[2]
+                    action = list(rs)[3]
+                    timeout= int(list(rs)[4])
+                    self.writeBPstate(actor, port, action)
+                    self.worker(actor, port, type, action, timeout)
+                    ##q.task_done()
+                    cbpi.app.logger.info("VALVE Q-worker ready again")
+        except Exception as e:
+            workerBP_set_stateLock = False
+            t = threading.Thread(target=self.workerBP_set_state)
+            t.daemon = True
+            t.start()
+        cbpi.app.logger.info("VALVE Q-worker exit")
+
+
+    def writeBPstate(self, actor, port, state):
         with ignored(Exception):
             if root != None:
                 if (root.find(address=actor)):
@@ -235,7 +286,7 @@ class BrewPiValve(ActorBase):
                 self.OWFS = False
  
         rs = self.targetState(actor, port, state)
-        ##cbpi.app.logger.info("SetBPState=> VALVE: %s, port: %s, rs: %i" % (actor, port, rs))
+        cbpi.app.logger.info("SetBPState=> VALVE: %s, port: %s, targetstate: %i" % (actor, port, rs))
 
         if self.OWFS == False:
             with ignored(Exception):
@@ -255,41 +306,51 @@ class BrewPiValve(ActorBase):
         ##cbpi.app.logger.info("VALVE: %s, port: %s, %x" % (actor, port, rs))
 
 
-    actor_name = Property.Select("1W-BP-Actor", options=getBPValves(), description="The BrewPi OneWire Valve Controller address.")
-    actor_type = Property.Select("Type", options=["CR03","CR05"], description="The valve type (cr03 = two wires, cr05 = 5 wires with status).")
-    port_name = Property.Select("Port", options=["A","B"], description="The BrewPi valve port.")
-    
-    def worker(self, power=100):
-        cbpi.app.logger.info("WRITE ACTOR (VALVE) Inactive check STARTED  device: %s PORT: %s" % (self.actor_name, self.port_name))
-        wstate=0
-        wsecs=10
-        wsecs=wsecs-1 ## gives some time to valve
+    def worker(self, actor_name, port_name, actor_type, action, timeout):
+        if action == "OFF" or action == "OFFLEDSON":  ## direct action
+            self.setBPstate(actor_name, port_name, self.actor_type, "OFF", int(timeout))
+            return
+
+        inact_timeout=int(timeout)+1
+        
+        cbpi.app.logger.info("WRITE ACTOR (VALVE) Inactive check STARTED,  device: %s, PORT: %s, TYPE: %s, timeout: %d" % (actor_name, port_name, actor_type, timeout))
+        wstate = 0
+        wsecs  = 1
         time.sleep(1)
 
-        while ((wstate == 0) and (wsecs >> 0)):  
-            time.sleep(1)
-            wsecs=wsecs-1
-            rs=self.getBPstate(self.actor_name, self.port_name)
-            cbpi.app.logger.info("WRITE ACTOR (VALVE) check getBPstate %s. Device: %s PORT: %s" % (list(rs), self.actor_name, self.port_name))
-            if (wsecs == 0):
-                if ((list(rs)[1] == "CLOSE") or (list(rs)[1] == "OPEN") or (list(rs)[1] == "OFF") or (list(rs)[1] == "OFFLEDSON")):
+        if actor_type == "CR05":
+            while ((wstate == 0) and (wsecs < inact_timeout)):  
+                rs=self.getBPstate(actor_name, port_name)
+                cbpi.app.logger.info("WRITE ACTOR (VALVE) check getBPstate %s. Device: %s PORT: %s. Action: %s" % (list(rs), actor_name, port_name, action))
+                ##if ( list(rs)[1] == action):
+                if ( list(rs)[0] == "CLOSED" and action == 'CLOSE' ):
+                    wstate=1
+                elif ( list(rs)[0] == "OPENED" and action == 'OPEN' ):
                     wstate=1
                 else:
-                    cbpi.app.logger.info("WRITE ACTOR (VALVE) Inactive check ENDED after %s sec. Already inactive. Device: %s PORT: %s" % (10-wsecs, self.actor_name, self.port_name))
-                    return
-            if self.actor_type == "CR05":
-                if (((list(rs)[0] == "CLOSED") or (list(rs)[0] == "OPENED"))):
-                    wstate=1
-        cbpi.app.logger.info("WRITE ACTOR (VALVE) Inactive check READY after %s sec. Device: %s PORT: %s" % (10-wsecs, self.actor_name, self.port_name))
-        ##if ((list(rs)[1] == "CLOSING") or (list(rs)[1] == "OPENING")):
-        self.inactive(self.actor_name, self.port_name)
-        pass
+                    time.sleep(1)
+                wsecs = wsecs + 1
+            self.setBPstate(actor_name, port_name, self.actor_type, "OFF", inact_timeout)
+        else:
+            while (wsecs < inact_timeout): 
+                time.sleep(1)
+                wsecs = wsecs + 1
+        
+            self.setBPstate(actor_name, port_name, self.actor_type, "OFF", inact_timeout)
+
+        cbpi.app.logger.info("WRITE ACTOR (VALVE) Inactive check READY after %s sec. Device: %s PORT: %s" % (wsecs, actor_name, port_name))
+        return
 
 
     def init(self):
         #init place for routines
-        ##self.inactive(self.actor_name, self.port_name)
-        pass
+        ## set valve in predef state ..., but how?
+        t = threading.Thread(target=self.workerBP_set_state)
+        if t.isAlive():
+            return
+        else:
+           t.daemon = True
+           t.start()
 
 
     def on(self,power):
@@ -297,16 +358,16 @@ class BrewPiValve(ActorBase):
         if self.actor_name is None:
             return
         
-        rs = self.getBPstate(self.actor_name, self.port_name)
-        if (list(rs)[0] == "OPENED") or (list(rs)[1] == "OPENING"):
-            return
+        ##rs = self.getBPstate(self.actor_name, self.port_name)
+        ##if (list(rs)[0] == "OPENED") or (list(rs)[1] == "OPENING"):
+        ##    return
         
-        while (list(rs)[1] == "CLOSING"):
-            time.sleep(1)
-            pass
+        ##while (list(rs)[1] == "CLOSING"):
+        ##    time.sleep(1)
+        ##    pass
 
-        self.setBPstate(self.actor_name, self.port_name, "OPEN")
-        t = threading.Thread(target=self.worker,kwargs={'power':power}).start()
+        self.setBPstate(self.actor_name, self.port_name, self.actor_type, "OPEN", self.inact_timeout)
+        ##t = threading.Thread(target=self.worker,kwargs={'power':power}).start()
 
 
     def off(self):
@@ -314,26 +375,35 @@ class BrewPiValve(ActorBase):
         if self.actor_name is None:
             return
 
-        rs = self.getBPstate(self.actor_name, self.port_name)
-        if (list(rs)[0] == "CLOSED") or (list(rs)[1] == "CLOSING"):
-            return
+        ##rs = self.getBPstate(self.actor_name, self.port_name)
+        ##if (list(rs)[0] == "CLOSED") or (list(rs)[1] == "CLOSING"):
+        ##    return
     
-        while (list(rs)[1] == "OPENING"):
-            time.sleep(1)
-            pass
+        ##while (list(rs)[1] == "OPENING"):
+        ##    time.sleep(1)
+        ##    pass
 
-        self.setBPstate(self.actor_name, self.port_name, "CLOSE")
-        t = threading.Thread(target=self.worker, kwargs={'power':100}).start()
+        self.setBPstate(self.actor_name, self.port_name, self.actor_type, "CLOSE", self.inact_timeout)
+        ##t = threading.Thread(target=self.worker, kwargs={'power':100}).start()
 
 
-    def inactive(self, actor_name, port_name):
-        cbpi.app.logger.info("VALVE %s SET INACTIVE start; Device: %s PORT: %s" % (self.name, actor_name, port_name))
+    def stop(self):
+        '''
+        Stop the sensor. Is called when the sensor config is updated or the sensor is deleted
+        :return: 
+        '''
+        cbpi.app.logger.info("VALVE %s STOPPED; Device: %s PORT: %s" % (self.name, actor_name, port_name))
+        pass
 
-        if actor_name is None:
-            return
-        ##cbpi.app.logger.info("VALVE %s set INACTIVE; Device: %s PORT: %s" % (self.name, actor_name, port_name))
 
-        self.setBPstate(actor_name, port_name, "OFF")
+    def set_power(self, power):
+        
+        '''
+        Optional: Set the power of your actor
+        :param power: int value between 0 - 100
+        :return: 
+        '''
+        pass
 
 
     @classmethod
@@ -347,6 +417,4 @@ class BrewPiValve(ActorBase):
 
 @cbpi.initalizer()
 def init(cbpi):
-
     cbpi.app.register_blueprint(blueprint, url_prefix='/api/one_wire_valve')
-
