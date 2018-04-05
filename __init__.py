@@ -254,7 +254,8 @@ class BrewPiValve(ActorBase):
             while True:
                 if q.empty():
                     ##cbpi.app.logger.info("VALVE Q-worker queue: EMPTY")
-                    time.sleep(.5)
+                    ##time.sleep(.5)
+                    return
                 else:
                     rs = q.get()
                     cbpi.app.logger.info("VALVE Q-worker got cmd %s from queue" % (list(rs)))
