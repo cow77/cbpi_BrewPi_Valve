@@ -9,6 +9,8 @@ Still in test, so please use with care!
 ![BrewPi Valve Control Expansion Board](https://store.brewpi.com/media/catalog/product/cache/1/image/9df78eab33525d08d6e5fb8d27136e95/b/r/brewpi_onewire_valve_expansion_board_1.jpg)
 BrewPiValve open/close a valve: consist of a ds2408 as 1-wire 8 pio device, driving a double H-bridge motor driver (L293D, driving 2 valves).
 
+![BrewPi Valve Control Expansion Board Back](https://user-images.githubusercontent.com/5492964/44626335-a65a9c00-a91a-11e8-8abc-bd0d35ba196e.jpg)
+
 
     BrewPiValve is the type to select as actor for Valves via BrewPi, the 1-wire id 29-.... as device, port A or B as target.
 
