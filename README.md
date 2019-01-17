@@ -11,6 +11,8 @@ BrewPiValve open/close a valve: consist of a ds2408 as 1-wire 8 pio device, driv
 
 ![BrewPi Valve Control Expansion Board Back](https://user-images.githubusercontent.com/5492964/44626335-a65a9c00-a91a-11e8-8abc-bd0d35ba196e.jpg)
 
+![BrewPi Valve Control Expansion Board Back](https://user-images.githubusercontent.com/5492964/51320036-f15a8480-1a5e-11e9-9e73-987f85496363.png)
+
 
     BrewPiValve is the type to select as actor for Valves via BrewPi, the 1-wire id 29-.... as device, port A or B as target.
 
