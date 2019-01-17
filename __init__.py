@@ -91,8 +91,9 @@ class BrewPiValve(ActorBase):
     actor_type = Property.Select("Type", options=["CR03","CR05"], description="The valve type (CR03 = two wires, CR05 = 5 wires with status-feedback).")
     port_name = Property.Select("Port", options=["A","B"], description="The BrewPi valve port.")
     inact_timeout = Property.Number("Timeout", configurable=True, default_value=10, description="Valve setting timeout.")
- 	if actor_name = 0:
-               cbpi.notify("BrewPiValve failed", "Please make sure BrewPiValve exist.", type="danger", timeout=None)
+ 
+    if actor_name = 0:
+        cbpi.notify("BrewPiValve failed", "Please make sure BrewPiValve exist.", type="danger", timeout=None)
 
 
     def targetState(self, actor, port, state):
