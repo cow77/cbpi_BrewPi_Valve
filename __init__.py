@@ -92,7 +92,7 @@ class BrewPiValve(ActorBase):
     port_name = Property.Select("Port", options=["A","B"], description="The BrewPi valve port.")
     inact_timeout = Property.Number("Timeout", configurable=True, default_value=10, description="Valve setting timeout.")
  
-    if actor_name = 0:
+    if (actor_name == 0):
         cbpi.notify("BrewPiValve failed", "Please make sure BrewPiValve exist.", type="danger", timeout=None)
 
 
