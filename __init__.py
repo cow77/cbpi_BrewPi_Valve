@@ -384,6 +384,7 @@ class BrewPiValve(ActorBase):
         ##rs = self.getBPstate(self.actor_name, self.port_name)
         ##if (list(rs)[0] == "CLOSED") or (list(rs)[1] == "CLOSING"):
         ##    return
+		##    
     
         ##while (list(rs)[1] == "OPENING"):
         ##    time.sleep(1)
