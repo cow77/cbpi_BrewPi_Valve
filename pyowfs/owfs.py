@@ -37,7 +37,7 @@
 #                      when searching a sensor by it's 1wire id
 #    ««revision-date»»···
 #--
-import libcapi
+from . import libcapi
 import re
 import logging
 
@@ -124,7 +124,7 @@ class Dir (object) :
 
         This resembles a write access to self.path/key.
         """
-        if self.has_key (key) and not isinstance (self.get (key), Dir) :
+        if key in self and not isinstance (self.get (key), Dir) :
             val = str (value)
             return self.capi.put ("%s%s" % (self.path, key), val)
     # end def put
@@ -194,8 +194,8 @@ class Sensor (Dir) :
                     continue
 
             failed = False
-            for k, v in kw.iteritems () :
-                if not sensor.has_key (k) :
+            for k, v in kw.items () :
+                if k not in sensor :
                     failed = True
                 elif sensor.get (k, cached = cached) != v :
                     failed = True

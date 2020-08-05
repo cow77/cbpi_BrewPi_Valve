@@ -9,9 +9,9 @@ import re, threading, time
 from flask import Blueprint, render_template, request
 from modules.core.props import Property
 from modules.core.hardware import ActorBase 
-import Queue
+import queue
 
-q = Queue.Queue()
+q = queue.Queue()
 workerBP_set_stateLock = False
 rs = ["","","","",""]
 
@@ -30,7 +30,7 @@ def ignored(*exceptions):
 
 
 try:
-    from pyowfs import Connection
+    from .pyowfs import Connection
     root = Connection('localhost:4304')
 except Exception as e:
     root = None
@@ -175,7 +175,7 @@ class BrewPiValve(ActorBase):
                 s.use_cache (0)
 
                 key = "sensed.BYTE"
-                if (s.has_key (key)):
+                if (key in s):
                     x = s.get(key)
                 l = list(x)
                 if l == None:
@@ -303,7 +303,7 @@ class BrewPiValve(ActorBase):
             key="PIO.BYTE"
             try:
                 s=root.find(address=actor)[0]
-                if (s.has_key (key)):
+                if (key in s):
                     ##cbpi.app.logger.info("SetBPState=> VALVE: %s, port: %s, stat: %c" % (actor, port, rs))
                     s.put(key,rs)
             except Exception as e:
@@ -415,7 +415,7 @@ class BrewPiValve(ActorBase):
 
     @classmethod
     def init_global(cls):
-        print "GLOBAL %s ACTOR" % (cls.__name__)
+        print("GLOBAL %s ACTOR" % (cls.__name__))
         ##try:
         ##    call(["modprobe", "w1-gpio"])
         ##    call(["modprobe", "w1-ds2408"])

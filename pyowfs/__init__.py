@@ -30,7 +30,7 @@
 #    ««revision-date»»···
 #--
 
-from owfs import Connection
+from .owfs import Connection
 
 ### __END__ __init__
 
