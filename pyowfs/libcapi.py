@@ -57,7 +57,7 @@ log.setLevel            (logging.INFO)
 
 CACHE_MAX_AGE = 30 # seconds
 
-class AlreadyInitialisedError (StandardError) :
+class AlreadyInitialisedError (Exception) :
     pass
 # end class AlreadyInitialisedError
 
